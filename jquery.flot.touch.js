@@ -26,6 +26,12 @@ Use as follow:
 (function($) {
 
     function init(plot) {
+        // Detect touch support
+        $.support.touch = 'ontouchend' in document;
+        if (!$.support.touch) {
+            return;    // Ignore browsers without touch support
+        }
+
         var isPanning = false;
         var isZooming = false;
         var lastTouchPosition = { x: -1, y: -1 };
