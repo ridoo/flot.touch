@@ -1,12 +1,15 @@
 /* jquery.flot.touch 3
-Plugin for Flot version 0.8.3+.
-Allows to use touch for pan / zoom.
+Plugin for Flot version 0.8.3.
+Allows to use touch for pan / zoom and simulate tap, double tap as mouse clicks so other plugins can work as usual with a touch device.
 
 https://github.com/chaveiro/flot.touch
 
 Copyright (c) 2015 Entropi Software LLC - Licensed under the MIT license.
 
-Plugin triggers this events : touchstarted and touchended
+Plugin triggers this events : touchstarted, touchended, tap and dbltap
+
+If option simulClick is true the plugin will generate a simulated Mouse click event to browser on tap or double tap. 
+                
 Use as follow:
     $("#graph").bind("touchstarted", function (event, pos)
     {
@@ -20,6 +23,20 @@ Use as follow:
         var xstart = ranges.xaxis.from; 
         var xend = ranges.xaxis.to;
         // add code to get json data then plot again with latest data
+    });
+    
+    $("#graph").bind("tap", function (event, pos)
+    {
+        var x = pos.x; 
+        var y = pos.y;
+        // add code to act on tap point
+    });
+    
+    $("#graph").bind("dbltap", function (event, pos)
+    {
+        var x = pos.x; 
+        var y = pos.y;
+        // add code to act on double tap point
     });
 */
 
@@ -35,12 +52,16 @@ Use as follow:
         var isPanning = false;
         var isZooming = false;
         var lastTouchPosition = { x: -1, y: -1 };
+        var startTouchPosition = lastTouchPosition;
         var lastTouchDistance = 0;
         var relativeOffset = { x: 0, y: 0};
         var relativeScale = 1.0;
         var scaleOrigin = { x: 50, y: 50 };
         var lastRedraw= new Date().getTime();
         var eventdelayTouchEnded;
+        
+        var tapNum = 0;
+        var tapTimer, tapTimestamp;
 
         function pan(delta) {
             var placeholder = plot.getPlaceholder();
@@ -113,6 +134,10 @@ Use as follow:
             }
         }
 
+        function getTimestamp() {
+            return new Date().getTime();
+        }
+    
         function bindEvents(plot, eventHolder) {
             var placeholder = plot.getPlaceholder();
             var options = plot.getOptions();
@@ -137,6 +162,7 @@ Use as follow:
                     }
                 });
 
+                tapTimestamp = getTimestamp();
                 if (touches.length === 1) {
                     isPanning = true;
                     lastTouchPosition = {
@@ -144,6 +170,7 @@ Use as follow:
                         y: touches[0].pageY
                     };
                     lastTouchDistance = 0;
+                    tapNum++;
                 }
                 else if (touches.length === 2) {
                     isZooming = true;
@@ -161,35 +188,35 @@ Use as follow:
                     width: placeholder.width(),
                     height: placeholder.height()
                 };
-                var normalizedTouchPosition = {
+                startTouchPosition = {
                     x: lastTouchPosition.x,
                     y: lastTouchPosition.y
                 };
 
-                if (normalizedTouchPosition.x < rect.x) {
-                    normalizedTouchPosition.x = rect.x;
+                if (startTouchPosition.x < rect.x) {
+                    startTouchPosition.x = rect.x;
                 }
-                else if (normalizedTouchPosition.x > rect.x + rect.width) {
-                    normalizedTouchPosition.x = rect.x + rect.width;
+                else if (startTouchPosition.x > rect.x + rect.width) {
+                    startTouchPosition.x = rect.x + rect.width;
                 }
 
-                if (normalizedTouchPosition.y < rect.y) {
-                    normalizedTouchPosition.y = rect.y;
+                if (startTouchPosition.y < rect.y) {
+                    startTouchPosition.y = rect.y;
                 }
-                else if (normalizedTouchPosition.y > rect.y + rect.height) {
-                    normalizedTouchPosition.y = rect.y + rect.height;
+                else if (startTouchPosition.y > rect.y + rect.height) {
+                    startTouchPosition.y = rect.y + rect.height;
                 }
 
                 scaleOrigin = {
-                    x: Math.round((normalizedTouchPosition.x / rect.width) * 100),
-                    y: Math.round((normalizedTouchPosition.y / rect.height) * 100)
+                    x: Math.round((startTouchPosition.x / rect.width) * 100),
+                    y: Math.round((startTouchPosition.y / rect.height) * 100)
                 };
                 
                 if (options.touch.css) {
                     placeholder.css('transform-origin', scaleOrigin.x + '% ' + scaleOrigin.y + '%');
                 }
                 
-                placeholder.trigger("touchstarted", [ normalizedTouchPosition ]);
+                placeholder.trigger("touchstarted", [ startTouchPosition ]);
                 // return false to prevent touch scrolling.
                 return false;
             });
@@ -243,12 +270,60 @@ Use as follow:
             placeholder.bind('touchend', function(evt) {
                 var placeholder = plot.getPlaceholder();
                 var options = plot.getOptions();
+                var touches = evt.originalEvent.changedTouches;
 
-                redraw();
+                // reset the tap counter
+                tapTimer = setTimeout(function() { tapNum = 0; }, options.touch.dbltapThreshold);  
+                // check if tap or dbltap
+                if (isPanning && touches.length === 1 && (tapTimestamp + options.touch.tapThreshold) - getTimestamp() >= 0 &&
+                    startTouchPosition.x >= lastTouchPosition.x - options.touch.tapPrecision &&
+                    startTouchPosition.x <= lastTouchPosition.x + options.touch.tapPrecision &&
+                    startTouchPosition.y >= lastTouchPosition.y - options.touch.tapPrecision &&
+                    startTouchPosition.y <= lastTouchPosition.y + options.touch.tapPrecision)
+                {
+                    //Fire plugin Tap event
+                    if (tapNum === 2) { 
+                        placeholder.trigger("dbltap", [ lastTouchPosition ]); 
+                    } else { 
+                        placeholder.trigger("tap", [ lastTouchPosition ]); 
+                    }
+
+                    if (options.touch.simulClick) {
+                        // Simulate mouse click event
+                        // https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/MouseEvent
+                        var simulatedEvent = new MouseEvent("click", {
+                            bubbles: true,
+                            cancelable: true,
+                            view: window,
+                            detail: tapNum, // num of clicks
+                            screenX: touches[0].screenX,
+                            screenY: touches[0].screenY,
+                            clientX: touches[0].clientX,
+                            clientY: touches[0].clientY,
+                            button: 0  // left mouse button
+                        });
+                        touches[0].target.dispatchEvent(simulatedEvent);
+                    }
+                }
+                else 
+                {
+                    var r = {};
+                    c1 = { x: 0, y: 0};
+                    c2 = { x: plot.width(), y: plot.height()};
+                    $.each(plot.getAxes(), function (name, axis) {
+                        if (axis.used) {
+                            var p1 = axis.c2p(c1[axis.direction]), p2 = axis.c2p(c2[axis.direction]); 
+                            r[name] = { from: Math.min(p1, p2), to: Math.max(p1, p2) };
+                        }
+                    });
+
+                    eventdelayTouchEnded = setTimeout(function(){ placeholder.trigger("touchended", [ r ]); }, options.touch.delayTouchEnded);
+                }
         
                 isPanning = false;
                 isZooming = false;
                 lastTouchPosition = { x: -1, y: -1 };
+                startTouchPosition = lastTouchPosition;
                 lastTouchDistance = 0;
                 relativeOffset = { x: 0, y: 0 };
                 relativeScale = 1.0;
@@ -261,17 +336,7 @@ Use as follow:
                     });
                 }
                 
-                var r = {};
-                c1 = { x: 0, y: 0};
-                c2 = { x: plot.width(), y: plot.height()};
-                $.each(plot.getAxes(), function (name, axis) {
-                    if (axis.used) {
-                        var p1 = axis.c2p(c1[axis.direction]), p2 = axis.c2p(c2[axis.direction]); 
-                        r[name] = { from: Math.min(p1, p2), to: Math.max(p1, p2) };
-                    }
-                });
 
-                eventdelayTouchEnded = setTimeout(function(){ placeholder.trigger("touchended", [ r ]); }, options.touch.delayTouchEnded);
             });
 
         }
@@ -385,6 +450,10 @@ Use as follow:
                 autoHeight: false,
                 delayTouchEnded: 500,   // delay in ms before touchended event is fired if no more touches
                 callback: null,         // other plot draw callback
+                simulClick: true,       // plugin will generate Mouse click event to brwoser on tap or double tap
+                tapThreshold:150,       // range of time where a tap event could be detected
+                dbltapThreshold:200,    // delay needed to detect a double tap
+                tapPrecision:60/2       // tap events boundaries ( 60px square by default )
             }
         },
         name: 'touch',
