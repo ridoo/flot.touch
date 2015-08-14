@@ -11,7 +11,9 @@
 <script type="text/javascript" src="lib/jquery-1.6.2.js"></script>
 <script type="text/javascript" src="jquery.flot.js"></script>
 <script type="text/javascript" src="jquery.flot.touch.js"></script>
-<script type="text/javascript" src="lib/jquery.mobile-1.0b2.js"></script>
+<!--
+	This example does not require jquery.mobile.
+<script type="text/javascript" src="lib/jquery.mobile-1.0b2.js"></script>-->
 <script type="text/javascript">
   $(function() {
     var sin = [];
@@ -27,10 +29,15 @@
         lines: { show: true },
         points: { show: true }
       },
-      touch: {
-        pan: 'x',
-        scale: 'x'
-      }
+	touch: {
+        pan: 'xy',              // what axis pan work
+        scale: 'xy',            // what axis zoom work
+        css: false,             // use css instead of redraw the graph (ugly!)
+        autoWidth: true,
+        autoHeight: true,
+        delayTouchEnded: 500,   // delay in ms before touchended event is fired if no more touches
+        callback: null          // other plot draw callback
+	}
     });
   });
 </script>
